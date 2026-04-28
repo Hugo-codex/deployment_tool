@@ -85,26 +85,61 @@ function resolveUnit(unit, docEntries, factionEntries, threshold = 0.75) {
   return { matched: null, confidence: 0, strategy: 'none', entry: null, scope: null }
 }
 
-// Fallback resolution using embedded defaults
+// Keyword-based size inference — last resort when no doc and no fuzzy fallback match
+const KEYWORD_BASES = [
+  { keywords: ['knight', 'armiger', 'dominus', 'castellan', 'paladin', 'valiant', 'titan'], base: { shape: 'oval', wMm: 170, hMm: 109 } },
+  { keywords: ['land raider', 'predator annihilator', 'predator destructor', 'sicaran', 'repulsor executioner'], base: { shape: 'oval', wMm: 120, hMm: 92 } },
+  { keywords: ['repulsor', 'impulsor', 'rhino', 'razorback', 'chimera', 'leman russ', 'predator', 'vindicator', 'whirlwind', 'hammerhead', 'ghost ark', 'monolith', 'land raider'], base: { shape: 'oval', wMm: 105, hMm: 70 } },
+  { keywords: ['redemptor', 'brutalis', 'ballistus', 'dreadnought'], base: { shape: 'oval', wMm: 90, hMm: 52 } },
+  { keywords: ['outrider', 'biker', 'bike', 'jetbike', 'scimitar', 'rough rider', 'windrider', 'shining spear'], base: { shape: 'oval', wMm: 75, hMm: 42 } },
+  { keywords: ['carnifex', 'hive tyrant', 'daemon prince', 'maulerfiend', 'forgefiend', 'bloat drone', 'defiler', 'canoptek doomstalker', 'riptide', 'broadside'], base: { shape: 'oval', wMm: 105, hMm: 70 } },
+  { keywords: ['terminator', 'custodian', 'obliterator', 'megaboss', 'grotesque', 'lychguard', 'immortal', 'wraithguard', 'crisis', 'broadside', 'blightlord'], base: { shape: 'round', sizeMm: 40 } },
+  { keywords: ['primarch', 'abaddon', 'mortarion', 'magnus', 'guilliman', 'sanguinius'], base: { shape: 'round', sizeMm: 80 } },
+]
+
+function guessBaseFromName(name) {
+  const lower = name.toLowerCase()
+  for (const { keywords, base } of KEYWORD_BASES) {
+    if (keywords.some(kw => lower.includes(kw))) return base
+  }
+  // Default: standard infantry 32mm
+  return { shape: 'round', sizeMm: 32 }
+}
+
+// Fallback resolution — fuzzy match against embedded FALLBACK_BASES, then keyword inference
 function resolveFallback(unit) {
   const name = unit.normalizedName
-  const fb = FALLBACK_BASES[name]
-  if (fb) {
+  const candidates = Object.entries(FALLBACK_BASES).map(([key, base]) => ({
+    name: key,
+    entry: { name: key, base, faction: 'unknown' },
+  }))
+
+  const result = findBestMatch(name, candidates, 0.6)
+  if (result.matched) {
     return {
-      matched: { name },
-      confidence: 0.7,
-      strategy: 'fallback_embedded',
-      entry: { name, base: fb, faction: 'unknown' },
+      matched: result.matched,
+      confidence: result.confidence,
+      strategy: `fallback_${result.strategy}`,
+      entry: result.matched.entry,
       scope: 'fallback',
     }
   }
-  return null
+
+  // Keyword inference — marks as inferred so user knows to verify
+  const inferredBase = guessBaseFromName(name)
+  return {
+    matched: { name },
+    confidence: 0.5,
+    strategy: 'inferred_keyword',
+    entry: { name, base: inferredBase, faction: 'unknown' },
+    scope: 'inferred',
+  }
 }
 
 // Main resolver — takes parsed roster, returns resolved roster
-export function resolveRoster(parsedRoster, faction, threshold = 0.75) {
+export function resolveRoster(parsedRoster, faction = '', threshold = 0.75) {
   const docEntries = loadWTCDoc() || []
-  const factionNorm = normalizeStr(faction)
+  const factionNorm = normalizeStr(faction ?? '')
   const factionEntries = docEntries.filter(e => normalizeStr(e.faction).includes(factionNorm) || factionNorm.includes(normalizeStr(e.faction)))
   const usingDoc = docEntries.length > 0
 
@@ -122,7 +157,11 @@ export function resolveRoster(parsedRoster, faction, threshold = 0.75) {
     }
 
     const base = result.entry?.base || null
-    const needsReview = !result.matched || result.confidence < threshold || result.scope === 'global' || base?.ambiguous
+    const needsReview = !result.matched
+      || result.confidence < threshold
+      || result.scope === 'global'
+      || result.scope === 'inferred'
+      || base?.ambiguous
     const unresolved = !result.matched
 
     const resolvedUnit = {

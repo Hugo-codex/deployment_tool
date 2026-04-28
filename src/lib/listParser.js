@@ -25,7 +25,11 @@ function normalizeName(raw) {
 }
 
 function extractCount(line) {
-  const m = line.match(/x(\d+)\s*$/i) || line.match(/\((\d+)\s*models?\)/i)
+  // "(5 models)" or "(x5)" or "x5" at end of line, before the points cost
+  const m = line.match(/\((\d+)\s*models?\)/i)
+    || line.match(/\(\s*x(\d+)\s*\)/i)
+    || line.match(/\sx(\d+)\s*(?:\(|$)/i)
+    || line.match(/\s\[(\d+)\s*models?\]/i)
   return m ? parseInt(m[1]) : null
 }
 
@@ -60,26 +64,13 @@ function parseGWApp(raw, player) {
     const count = extractCount(firstLine) || 1
     const countAssumed = !extractCount(firstLine)
 
-    // Detect model subtypes from indented lines (bullet points)
-    const subtypes = []
-    for (const line of lines.slice(1)) {
-      if (line.startsWith('•') || line.startsWith('-')) {
-        const text = line.replace(/^[•\-]\s*/, '').trim()
-        // Only track model-type lines, skip wargear (heuristic: starts with number or "x")
-        if (/^(\d+x|x\d+)/i.test(text)) {
-          const m = text.match(/^(\d+)x?\s+(.+)$/i) || text.match(/^x(\d+)\s+(.+)$/i)
-          if (m) subtypes.push({ name: m[2].trim(), count: parseInt(m[1]) })
-        }
-      }
-    }
-
     units.push({
       id: `parsed_${String(idCounter++).padStart(3, '0')}`,
       rawName,
       normalizedName: normalized,
       unitRole: null,
-      modelCount: subtypes.reduce((s, t) => s + t.count, 0) || count,
-      modelSubtypes: subtypes,
+      modelCount: count,
+      modelSubtypes: [],
       flags: { countAssumed, duplicateName: false, allied: false, sourceUnknown: false },
     })
   }

@@ -80,7 +80,7 @@ export default function ValidationView() {
     }
   }
 
-  const overallColor = !report ? 'text-neutral-500'
+  const overallColor = !report?.summary ? 'text-neutral-500'
     : report.summary.overall === 'legal' ? 'text-emerald-400'
     : report.summary.overall === 'illegal' ? 'text-red-400'
     : 'text-amber-400'
@@ -110,8 +110,15 @@ export default function ValidationView() {
           </button>
         </div>
 
+        {/* Error from validator */}
+        {report?.error && (
+          <div className="bg-red-950/40 border border-red-800 rounded px-4 py-3 text-sm text-red-400">
+            {report.error}
+          </div>
+        )}
+
         {/* Summary */}
-        {report && (
+        {report?.summary && (
           <div className="bg-neutral-900 rounded border border-neutral-800 px-4 py-3 flex items-center gap-6">
             <div>
               <div className={clsx('text-xl font-bold uppercase', overallColor)}>
@@ -146,7 +153,7 @@ export default function ValidationView() {
         )}
 
         {/* Results by group */}
-        {report && Object.entries(grouped).map(([group, checks]) => (
+        {report?.summary && Object.entries(grouped).map(([group, checks]) => (
           <div key={group}>
             <div className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">
               Group {group} — {CHECK_GROUPS[group]}

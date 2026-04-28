@@ -91,7 +91,7 @@ export const useWTCStore = create((set, get) => ({
       const parsed = parseRoster(raw, player)
       if (!parsed || parsed.units.length === 0) throw new Error('No units found in list.')
 
-      const resolved = resolveRoster(parsed)
+      const resolved = resolveRoster(parsed, parsed.metadata.faction ?? '')
       const manifest = buildUnitManifest(resolved, selectedDeploymentType, player)
 
       const key = player === 1 ? KEYS.activeListP1 : KEYS.activeListP2
@@ -175,7 +175,7 @@ export const useWTCStore = create((set, get) => ({
   hoverUnit: (unitId) => set({ hoveredUnitId: unitId }),
   setActivePlayer: (player) => set({ activePlayer: player }),
 
-  moveUnit: (unitId, player, xPx, yPx) => {
+  moveUnit: (unitId, player, xPx, yPx, placed = true) => {
     const { activeListP1, activeListP2 } = get()
     const key = player === 1 ? KEYS.activeListP1 : KEYS.activeListP2
     const manifest = player === 1 ? activeListP1 : activeListP2
@@ -186,7 +186,7 @@ export const useWTCStore = create((set, get) => ({
       ...manifest,
       units: manifest.units.map(u =>
         u.id === unitId
-          ? { ...u, placement: { xPx, yPx, xInch: xPx / scale, yInch: yPx / scale, placed: true } }
+          ? { ...u, placement: { xPx, yPx, xInch: xPx / scale, yInch: yPx / scale, placed } }
           : u
       ),
     }

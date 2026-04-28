@@ -69,7 +69,7 @@ function suggestInitialPositions(units, deploymentType, player, scale = SCALE) {
       yPx: startY + row * 65,
       xInch: (startX + col * 65) / scale,
       yInch: (startY + row * 65) / scale,
-      placed: false,
+      placed: true,
     }
   })
 }

@@ -5,14 +5,30 @@ import { clsx } from 'clsx'
 function UnitEntry({ unit, player, isSelected }) {
   const selectUnit = useWTCStore(s => s.selectUnit)
   const toggleUnitReserve = useWTCStore(s => s.toggleUnitReserve)
+  const moveUnit = useWTCStore(s => s.moveUnit)
   const addOverlayArc = useWTCStore(s => s.addOverlayArc)
 
-  const playerColor = player === 1 ? 'blue' : 'amber'
+  const isOnBoard = unit.placement?.placed && !unit.inReserve
   const statusDot = unit.inReserve
     ? 'bg-neutral-600'
-    : unit.placement?.placed
+    : isOnBoard
       ? (player === 1 ? 'bg-blue-500' : 'bg-amber-500')
       : 'bg-neutral-700'
+
+  const statusLabel = unit.inReserve ? 'Reserve' : isOnBoard ? 'On board' : 'Off board'
+
+  function toggleOnBoard(e) {
+    e.stopPropagation()
+    if (unit.inReserve) return // reserve toggle handles this
+    // If off board, place at a default spot near deployment zone
+    const defaultX = player === 1 ? 100 : 1100
+    const defaultY = player === 1 ? 800 : 80
+    moveUnit(unit.id, player,
+      unit.placement?.placed ? unit.placement.xPx : defaultX,
+      unit.placement?.placed ? unit.placement.yPx : defaultY,
+      !unit.placement?.placed
+    )
+  }
 
   return (
     <div
@@ -27,6 +43,7 @@ function UnitEntry({ unit, player, isSelected }) {
       <div className="flex items-center gap-2">
         <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', statusDot)} />
         <span className="text-xs text-neutral-200 truncate flex-1">{unit.displayLabel}</span>
+        <span className="text-xs text-neutral-600 shrink-0">{statusLabel}</span>
         {unit.base.sizeUnknown && <span className="text-xs text-amber-400">?</span>}
       </div>
 
@@ -36,7 +53,7 @@ function UnitEntry({ unit, player, isSelected }) {
             onClick={e => { e.stopPropagation(); toggleUnitReserve(unit.id, player) }}
             className="px-1.5 py-0.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-300"
           >
-            {unit.inReserve ? 'On Board' : 'Reserve'}
+            {unit.inReserve ? '← On Board' : 'Reserve →'}
           </button>
           <button
             onClick={e => {

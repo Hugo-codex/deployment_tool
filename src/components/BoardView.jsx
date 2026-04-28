@@ -18,17 +18,18 @@ function drawBoard(ctx, boardState) {
   ctx.fillStyle = '#1a1a2e'
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
-  // Deployment zone overlays
-  if (boardState.deploymentZones) {
-    for (const [key, poly] of Object.entries(boardState.deploymentZones)) {
-      if (!poly?.length) continue
+  // Deployment zone overlays — boardState.deploymentZones: { player_1: [{x,y}], player_2: [{x,y}] }
+  const zones = boardState.deploymentZones
+  if (zones) {
+    for (const [key, poly] of Object.entries(zones)) {
+      if (!Array.isArray(poly) || !poly.length) continue
       ctx.beginPath()
       ctx.moveTo(poly[0].x, poly[0].y)
       poly.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
       ctx.closePath()
-      ctx.fillStyle = key.includes('1') ? 'rgba(59,130,246,0.08)' : 'rgba(245,158,11,0.08)'
+      ctx.fillStyle = key === 'player_1' ? 'rgba(59,130,246,0.08)' : 'rgba(245,158,11,0.08)'
       ctx.fill()
-      ctx.strokeStyle = key.includes('1') ? 'rgba(59,130,246,0.4)' : 'rgba(245,158,11,0.4)'
+      ctx.strokeStyle = key === 'player_1' ? 'rgba(59,130,246,0.4)' : 'rgba(245,158,11,0.4)'
       ctx.lineWidth = 1
       ctx.stroke()
     }
@@ -50,20 +51,32 @@ function drawBoard(ctx, boardState) {
   }
 }
 
+const TERRAIN_COLORS = {
+  '3_storey_ruin': { fill: 'rgba(120,80,40,0.30)', stroke: '#92400e', text: '#d97706' },
+  '2_storey_ruin': { fill: 'rgba(100,70,30,0.25)', stroke: '#78350f', text: '#b45309' },
+  'container':     { fill: 'rgba(40,80,120,0.30)', stroke: '#1e3a5f', text: '#60a5fa' },
+  'prototype':     { fill: 'rgba(80,80,80,0.25)',  stroke: '#404040', text: '#9ca3af' },
+}
+
 function drawTerrain(ctx, terrain = []) {
   for (const piece of terrain) {
     const hw = (piece.footprintWPx || 120) / 2
-    const hh = (piece.footprintHPx || hw) / 2
-    ctx.fillStyle = 'rgba(120,80,40,0.25)'
-    ctx.strokeStyle = '#92400e'
-    ctx.lineWidth = 1.5
+    const hh = (piece.footprintHPx || 60) / 2
+    const colors = TERRAIN_COLORS[piece.terrainType] ?? TERRAIN_COLORS['2_storey_ruin']
+
+    ctx.fillStyle = colors.fill
     ctx.fillRect(piece.xPx - hw, piece.yPx - hh, hw * 2, hh * 2)
+    ctx.strokeStyle = colors.stroke
+    ctx.lineWidth = 1.5
     ctx.strokeRect(piece.xPx - hw, piece.yPx - hh, hw * 2, hh * 2)
 
-    ctx.fillStyle = '#a16207'
+    // Short label (T01, T02…) centred on the piece
+    ctx.fillStyle = colors.text
     ctx.font = '9px monospace'
     ctx.textAlign = 'center'
-    ctx.fillText(piece.label ?? '', piece.xPx, piece.yPx + 3)
+    ctx.textBaseline = 'middle'
+    ctx.fillText(piece.label ?? '', piece.xPx, piece.yPx)
+    ctx.textBaseline = 'alphabetic'
   }
 }
 
@@ -77,9 +90,11 @@ function drawObjectives(ctx, objectives = []) {
     ctx.lineWidth = 1.5
     ctx.stroke()
     ctx.fillStyle = '#facc15'
-    ctx.font = '8px monospace'
+    ctx.font = 'bold 8px monospace'
     ctx.textAlign = 'center'
-    ctx.fillText(obj.label ?? 'OBJ', obj.xPx, obj.yPx + 3)
+    ctx.textBaseline = 'middle'
+    ctx.fillText(obj.label ?? 'OBJ', obj.xPx, obj.yPx)
+    ctx.textBaseline = 'alphabetic'
   }
 }
 
@@ -88,8 +103,7 @@ function drawUnits(ctx, units = [], player, selectedUnitId, hoveredUnitId) {
   const reserveColor = '#6b7280'
 
   for (const unit of units) {
-    if (!unit.placement?.placed && !unit.inReserve) continue
-    if (unit.inReserve) continue
+    if (unit.inReserve || !unit.placement?.placed) continue
 
     const cx = unit.placement.xPx
     const cy = unit.placement.yPx
@@ -218,6 +232,23 @@ function drawThreatArc(ctx, marker) {
   ctx.restore()
 }
 
+function drawNoTerrainWarning(ctx, boardState) {
+  if (!boardState || boardState.terrain?.length > 0) return
+  ctx.save()
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'
+  ctx.fillRect(CANVAS_W / 2 - 220, CANVAS_H / 2 - 28, 440, 56)
+  ctx.fillStyle = '#f59e0b'
+  ctx.font = 'bold 13px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const msg = boardState.warnings?.find(w => w.type === 'missing_coords')
+    ? `No terrain data for ${boardState.deploymentType?.replace(/_/g, ' ')} — coordinates not yet in WTC v2.4`
+    : 'No terrain pieces on this board.'
+  ctx.fillText(msg, CANVAS_W / 2, CANVAS_H / 2)
+  ctx.textBaseline = 'alphabetic'
+  ctx.restore()
+}
+
 function drawLiveRuler(ctx, liveRuler) {
   if (!liveRuler) return
   ctx.save()
@@ -271,6 +302,7 @@ export default function BoardView() {
     drawObjectives(ctx, boardState?.objectives)
     if (activeListP1) drawUnits(ctx, activeListP1.units, 1, selectedUnitId, hoveredUnitId)
     if (activeListP2) drawUnits(ctx, activeListP2.units, 2, selectedUnitId, hoveredUnitId)
+    drawNoTerrainWarning(ctx, boardState)
     drawOverlay(ctx, overlayState, settings.snapEnabled, SCALE)
     drawLiveRuler(ctx, liveRuler)
   }, [boardState, activeListP1, activeListP2, overlayState, selectedUnitId, hoveredUnitId, liveRuler, settings.snapEnabled])
@@ -286,11 +318,12 @@ export default function BoardView() {
   }, [])
 
   function findUnitAtPos(x, y) {
+    // Check P2 first so P1 units render on top when stacked
     for (const [manifest, player] of [[activeListP2, 2], [activeListP1, 1]]) {
       if (!manifest) continue
       for (const unit of manifest.units) {
-        if (!unit.placement?.placed) continue
-        const r = unit.base.sizePx / 2
+        if (unit.inReserve || !unit.placement?.placed) continue
+        const r = Math.max(unit.base.sizePx / 2, 12) // minimum grab radius
         const dx = x - unit.placement.xPx
         const dy = y - unit.placement.yPx
         if (dx * dx + dy * dy <= r * r) return { unit, player }
