@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-neutral-950 text-neutral-100 font-sans antialiased;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-neutral-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-neutral-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-neutral-500; }
+}
+
+@layer utilities {
+  .canvas-cursor-default { cursor: default; }
+  .canvas-cursor-crosshair { cursor: crosshair; }
+  .canvas-cursor-grab { cursor: grab; }
+  .canvas-cursor-grabbing { cursor: grabbing; }
+}
