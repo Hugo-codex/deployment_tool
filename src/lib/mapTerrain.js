@@ -5,14 +5,6 @@ import { inchToPx } from '../utils/geometry.js'
 
 const DEFAULT_SCALE = 20 // px/inch
 
-// Canonical terrain type names (used everywhere in the app)
-const TYPE_MAP = {
-  three_storey_ruin: '3_storey_ruin',
-  two_storey_ruin:   '2_storey_ruin',
-  containers:        'container',
-  prototype_ruin:    'prototype',
-}
-
 // Parse "(X-Y)(X-Y)..." coordinate string → array of {xInch, yInch}
 function parseCoords(str) {
   if (!str) return []
@@ -22,6 +14,7 @@ function parseCoords(str) {
 
 // WTC coords are for one half of the board (X 0-30, Y 0-22).
 // Mirror each piece to its symmetric counterpart across the board center.
+// fullCoords is interleaved: [orig0, mirror0, orig1, mirror1, ...]
 function mirrorCoords(coords) {
   const result = []
   for (const c of coords) {
@@ -31,13 +24,23 @@ function mirrorCoords(coords) {
   return result
 }
 
-// Assign terrain type: WTC maps typically have 2 container groups per half (every 4th-5th piece)
-// and alternate 3-storey / 2-storey ruins for the rest
-function assignTerrainType(index, total) {
-  // index is over the full mirrored set
-  const halfIndex = index % Math.ceil(total / 2)
-  if (halfIndex === 2 || halfIndex === 5) return 'container'
-  return halfIndex % 2 === 0 ? '3_storey_ruin' : '2_storey_ruin'
+// Rotation sequence matching the diagonal/angled ruins visible in WTC/GW layouts
+// Applied per half-board index so original and mirror share the same rotation
+const ROTATION_SEQ = [30, -25, 45, 0, -35, 25, -45, 0, 35, -20, 30, -30, 0, 40, -28, 22]
+
+// Type + rotation assignment per half-board index (i.e. Math.floor(fullIndex / 2))
+// Pattern: 3 ruins then 1 container, repeating. Ruins alternate 3-storey / 2-storey.
+function getTerrainMeta(halfIndex) {
+  const posInCycle = halfIndex % 4
+  if (posInCycle === 3) {
+    // Container: always axis-aligned
+    return { type: 'container', rotationDeg: 0 }
+  }
+  // Ruin: alternate 3-storey and 2-storey
+  const ruinRank = Math.floor(halfIndex / 4) * 3 + posInCycle
+  const type = ruinRank % 3 === 2 ? '2_storey_ruin' : '3_storey_ruin'
+  const rotationDeg = ROTATION_SEQ[halfIndex % ROTATION_SEQ.length]
+  return { type, rotationDeg }
 }
 
 // Build deployment zone polygon in px — returns array of {x, y} points
@@ -52,10 +55,14 @@ function buildZonePolygon(config, bw, bh, scale) {
   }
 }
 
-function buildSpecialZone(config, bw, bh) {
-  const d = Math.min(bw, bh) * 0.4
+function buildSpecialZone(config, bw, bh, scale) {
+  // Crucible of Battle / Sweeping Engagement corner zones
+  // Each zone is a triangle from a board corner, depth = inches from each adjacent edge
+  const d = config.depth ? inchToPx(config.depth, scale) : Math.min(bw, bh) * 0.4
   if (config.corner === 'bottom-left') return [{ x: 0, y: bh }, { x: d, y: bh }, { x: 0, y: bh - d }]
   if (config.corner === 'top-right')   return [{ x: bw, y: 0 }, { x: bw - d, y: 0 }, { x: bw, y: d }]
+  if (config.corner === 'bottom-right') return [{ x: bw, y: bh }, { x: bw - d, y: bh }, { x: bw, y: bh - d }]
+  if (config.corner === 'top-left')     return [{ x: 0, y: 0 }, { x: d, y: 0 }, { x: 0, y: d }]
   return []
 }
 
@@ -67,10 +74,10 @@ function buildZones(deploymentType, scale) {
 
   const p1 = zoneDef.p1.type === 'strip'
     ? buildZonePolygon(zoneDef.p1, bw, bh, scale)
-    : buildSpecialZone(zoneDef.p1, bw, bh)
+    : buildSpecialZone(zoneDef.p1, bw, bh, scale)
   const p2 = zoneDef.p2.type === 'strip'
     ? buildZonePolygon(zoneDef.p2, bw, bh, scale)
-    : buildSpecialZone(zoneDef.p2, bw, bh)
+    : buildSpecialZone(zoneDef.p2, bw, bh, scale)
 
   return { player_1: p1, player_2: p2 }
 }
@@ -136,24 +143,31 @@ export function buildBoardState(deploymentType, mapNumber, scale = DEFAULT_SCALE
   const boardHPx = inchToPx(BOARD.height, scale)
 
   const terrain = fullCoords.map((coord, i) => {
-    const terrainType = assignTerrainType(i, fullCoords.length)
-    // Look up dimensions from TERRAIN_TYPES using the original key
-    const typeKey = Object.entries(TYPE_MAP).find(([, v]) => v === terrainType)?.[0] ?? 'two_storey_ruin'
-    const dims = TERRAIN_TYPES[typeKey] ?? TERRAIN_TYPES.two_storey_ruin
+    const halfIndex = Math.floor(i / 2)   // original and mirror share the same half-index
+    const { type: terrainType, rotationDeg } = getTerrainMeta(halfIndex)
+
+    // Dimension lookup — map canonical type → TERRAIN_TYPES key
+    const typeKeyMap = {
+      '3_storey_ruin': 'three_storey_ruin',
+      '2_storey_ruin': 'two_storey_ruin',
+      container:       'containers',
+      prototype:       'prototype_ruin',
+    }
+    const dims = TERRAIN_TYPES[typeKeyMap[terrainType]] ?? TERRAIN_TYPES.two_storey_ruin
 
     return {
       id: `terrain_${String(i + 1).padStart(2, '0')}`,
-      terrainType,                              // canonical: '3_storey_ruin' | '2_storey_ruin' | 'container' | 'prototype'
+      terrainType,      // canonical: '3_storey_ruin' | '2_storey_ruin' | 'container' | 'prototype'
       label: `T${String(i + 1).padStart(2, '0')}`,
-      terrainLabel: dims.label,                 // human-readable: '3-Storey Ruin' etc.
+      terrainLabel: dims.label,
       xInch: coord.xInch,
       yInch: coord.yInch,
       xPx:   inchToPx(coord.xInch, scale),
-      yPx:   inchToPx(BOARD.height - coord.yInch, scale), // flip Y: WTC origin bottom-left, canvas origin top-left
+      yPx:   inchToPx(BOARD.height - coord.yInch, scale), // flip Y: WTC origin bottom-left, canvas top-left
       footprintWPx: inchToPx(dims.footprintW, scale),
       footprintHPx: inchToPx(dims.footprintH, scale),
       heightInch: dims.height,
-      rotation: 0,
+      rotationDeg,      // degrees clockwise — used by BoardView canvas renderer
     }
   })
 

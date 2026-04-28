@@ -14,34 +14,12 @@ const SCALE = 20 // px/inch
 // ─── Canvas drawing helpers ───────────────────────────────────────────────────
 
 function drawBoard(ctx, boardState) {
-  if (!boardState) return
-  ctx.fillStyle = '#1a1a2e'
+  // Mat background — light grey/tan like a WTC gaming mat
+  ctx.fillStyle = '#d6d2c8'
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
-  // Deployment zone overlays — boardState.deploymentZones: { player_1: [{x,y}], player_2: [{x,y}] }
-  const zones = boardState.deploymentZones
-  if (zones) {
-    for (const [key, poly] of Object.entries(zones)) {
-      if (!Array.isArray(poly) || !poly.length) continue
-      ctx.beginPath()
-      ctx.moveTo(poly[0].x, poly[0].y)
-      poly.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
-      ctx.closePath()
-      ctx.fillStyle = key === 'player_1' ? 'rgba(59,130,246,0.08)' : 'rgba(245,158,11,0.08)'
-      ctx.fill()
-      ctx.strokeStyle = key === 'player_1' ? 'rgba(59,130,246,0.4)' : 'rgba(245,158,11,0.4)'
-      ctx.lineWidth = 1
-      ctx.stroke()
-    }
-  }
-
-  // Board border
-  ctx.strokeStyle = '#374151'
-  ctx.lineWidth = 2
-  ctx.strokeRect(1, 1, CANVAS_W - 2, CANVAS_H - 2)
-
-  // Inch grid (light)
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)'
+  // 1" grid — faint
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)'
   ctx.lineWidth = 0.5
   for (let x = SCALE; x < CANVAS_W; x += SCALE) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke()
@@ -49,51 +27,151 @@ function drawBoard(ctx, boardState) {
   for (let y = SCALE; y < CANVAS_H; y += SCALE) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke()
   }
+
+  // 6" grid — slightly bolder
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'
+  ctx.lineWidth = 0.75
+  for (let x = SCALE * 6; x < CANVAS_W; x += SCALE * 6) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke()
+  }
+  for (let y = SCALE * 6; y < CANVAS_H; y += SCALE * 6) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke()
+  }
+
+  // Board center × marker
+  const cx = CANVAS_W / 2, cy = CANVAS_H / 2, xs = 10
+  ctx.strokeStyle = '#cc0000'
+  ctx.lineWidth = 1.5
+  ctx.beginPath(); ctx.moveTo(cx - xs, cy - xs); ctx.lineTo(cx + xs, cy + xs); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(cx + xs, cy - xs); ctx.lineTo(cx - xs, cy + xs); ctx.stroke()
+
+  if (!boardState) return
+
+  // Deployment zones — faint fill + red dashed boundary
+  const zones = boardState.deploymentZones
+  if (zones) {
+    for (const poly of Object.values(zones)) {
+      if (!Array.isArray(poly) || poly.length < 3) continue
+      ctx.beginPath()
+      ctx.moveTo(poly[0].x, poly[0].y)
+      poly.slice(1).forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.closePath()
+      ctx.fillStyle = 'rgba(180,0,0,0.04)'
+      ctx.fill()
+      ctx.strokeStyle = '#cc0000'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([8, 5])
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+  }
+
+  // Board border
+  ctx.strokeStyle = '#444'
+  ctx.lineWidth = 2
+  ctx.strokeRect(1, 1, CANVAS_W - 2, CANVAS_H - 2)
 }
 
-const TERRAIN_COLORS = {
-  '3_storey_ruin': { fill: 'rgba(120,80,40,0.30)', stroke: '#92400e', text: '#d97706' },
-  '2_storey_ruin': { fill: 'rgba(100,70,30,0.25)', stroke: '#78350f', text: '#b45309' },
-  'container':     { fill: 'rgba(40,80,120,0.30)', stroke: '#1e3a5f', text: '#60a5fa' },
-  'prototype':     { fill: 'rgba(80,80,80,0.25)',  stroke: '#404040', text: '#9ca3af' },
+function drawRuin(ctx, hw, hh) {
+  // Grey fill
+  ctx.fillStyle = '#8a8e8a'
+  ctx.fillRect(-hw, -hh, hw * 2, hh * 2)
+
+  // Diagonal hatching (bottom-left to top-right, like WTC map images)
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(-hw, -hh, hw * 2, hh * 2)
+  ctx.clip()
+  ctx.strokeStyle = '#6a6e6a'
+  ctx.lineWidth = 1.2
+  const spacing = 12
+  const d = Math.max(hw, hh) * 2 + spacing
+  ctx.beginPath()
+  for (let i = -d; i < d * 2; i += spacing) {
+    ctx.moveTo(i - hh, -hh)
+    ctx.lineTo(i + hh, hh)
+  }
+  ctx.stroke()
+  ctx.restore()
+
+  // Border
+  ctx.strokeStyle = '#555'
+  ctx.lineWidth = 1.5
+  ctx.strokeRect(-hw, -hh, hw * 2, hh * 2)
+}
+
+function drawContainer(ctx, hw, hh) {
+  // Solid blue, like in WTC maps
+  ctx.fillStyle = '#4a7ab5'
+  ctx.fillRect(-hw, -hh, hw * 2, hh * 2)
+  ctx.strokeStyle = '#2d5080'
+  ctx.lineWidth = 1.5
+  ctx.strokeRect(-hw, -hh, hw * 2, hh * 2)
 }
 
 function drawTerrain(ctx, terrain = []) {
   for (const piece of terrain) {
-    const hw = (piece.footprintWPx || 120) / 2
-    const hh = (piece.footprintHPx || 60) / 2
-    const colors = TERRAIN_COLORS[piece.terrainType] ?? TERRAIN_COLORS['2_storey_ruin']
+    const hw = (piece.footprintWPx || 240) / 2
+    const hh = (piece.footprintHPx || 120) / 2
+    const rotRad = ((piece.rotationDeg ?? 0) * Math.PI) / 180
 
-    ctx.fillStyle = colors.fill
-    ctx.fillRect(piece.xPx - hw, piece.yPx - hh, hw * 2, hh * 2)
-    ctx.strokeStyle = colors.stroke
-    ctx.lineWidth = 1.5
-    ctx.strokeRect(piece.xPx - hw, piece.yPx - hh, hw * 2, hh * 2)
+    ctx.save()
+    ctx.translate(piece.xPx, piece.yPx)
+    ctx.rotate(rotRad)
 
-    // Short label (T01, T02…) centred on the piece
-    ctx.fillStyle = colors.text
-    ctx.font = '9px monospace'
+    if (piece.terrainType === 'container') {
+      drawContainer(ctx, hw, hh)
+    } else {
+      drawRuin(ctx, hw, hh)
+    }
+
+    // Piece label centred (small, dark)
+    ctx.fillStyle = piece.terrainType === 'container' ? '#dbeafe' : '#222'
+    ctx.font = 'bold 9px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(piece.label ?? '', piece.xPx, piece.yPx)
+    ctx.fillText(piece.label ?? '', 0, 0)
     ctx.textBaseline = 'alphabetic'
+
+    ctx.restore()
   }
 }
 
 function drawObjectives(ctx, objectives = []) {
   for (const obj of objectives) {
+    const x = obj.xPx, y = obj.yPx, r = 12
+
+    // Outer ring
     ctx.beginPath()
-    ctx.arc(obj.xPx, obj.yPx, 10, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(250,204,21,0.2)'
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(204,0,0,0.12)'
     ctx.fill()
-    ctx.strokeStyle = '#facc15'
+    ctx.strokeStyle = '#cc0000'
     ctx.lineWidth = 1.5
     ctx.stroke()
-    ctx.fillStyle = '#facc15'
-    ctx.font = 'bold 8px monospace'
+
+    // Inner dot
+    ctx.beginPath()
+    ctx.arc(x, y, 3, 0, Math.PI * 2)
+    ctx.fillStyle = '#cc0000'
+    ctx.fill()
+
+    // Crosshair lines (⊕ style)
+    ctx.strokeStyle = '#cc0000'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(x - r - 4, y); ctx.lineTo(x - r + 4, y)
+    ctx.moveTo(x + r - 4, y); ctx.lineTo(x + r + 4, y)
+    ctx.moveTo(x, y - r - 4); ctx.lineTo(x, y - r + 4)
+    ctx.moveTo(x, y + r - 4); ctx.lineTo(x, y + r + 4)
+    ctx.stroke()
+
+    // Label below
+    ctx.fillStyle = '#cc0000'
+    ctx.font = 'bold 8px sans-serif'
     ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(obj.label ?? 'OBJ', obj.xPx, obj.yPx)
+    ctx.textBaseline = 'top'
+    ctx.fillText(obj.label ?? '', x, y + r + 2)
     ctx.textBaseline = 'alphabetic'
   }
 }
